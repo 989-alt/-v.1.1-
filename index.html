@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>완전한 윷놀이 게임</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Jua', sans-serif;
+            touch-action: manipulation;
+            background-color: #f0e6d2;
+        }
+        
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            width: 100%;
+            max-width: 1000px;
+            margin: auto;
+            padding: 1rem;
+        }
+
+        @media (min-width: 768px) {
+            #game-container {
+                flex-direction: row;
+            }
+        }
+
+        #board-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            aspect-ratio: 1 / 1;
+            /* Diagonal lines removed for a cleaner look */
+            background-image: none;
+        }
+
+        .spot {
+            position: absolute;
+            width: 11%;
+            height: 11%;
+            border-radius: 50%;
+            background-color: white;
+            border: 3px solid black;
+            transform: translate(-50%, -50%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            padding: 2px;
+        }
+
+        .spot.corner {
+            width: 13%;
+            height: 13%;
+            background-color: #333;
+        }
+        .spot.center {
+            background-color: #A52A2A;
+             border: 3px solid #D4AF37;
+        }
+
+        .piece {
+            width: 40%;
+            height: 40%;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            transition: all 0.3s ease;
+            color: white;
+            font-size: 0.8rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+        }
+
+        .piece.red { background-color: #ef4444; }
+        .piece.blue { background-color: #3b82f6; }
+        .piece.selectable {
+            cursor: pointer;
+            box-shadow: 0 0 15px 5px #fef08a;
+            transform: scale(1.1);
+        }
+        
+        .waiting-area .piece { 
+            width: 40px; 
+            height: 40px; 
+            border-radius: 50%;
+        }
+
+        #yut-thrower { perspective: 1200px; }
+        .yut-wrapper { position: absolute; transition: transform 1s cubic-bezier(0.2, 0.9, 0.5, 1); }
+        .yut-stick { width: 25px; height: 100px; position: relative; transform-style: preserve-3d; transition: transform 1s cubic-bezier(0.2, 0.9, 0.5, 1); }
+        .yut-face { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.15); border: 2px solid #855b3b;}
+        .yut-face.back { background-color: #ffffff; border-radius: 4px; transform: translateZ(5px); }
+        .yut-face.belly { background-color: #d2b48c; border-radius: 12.5px; transform: rotateY(180deg) translateZ(5px); display: flex; flex-direction: column; justify-content: space-around; align-items: center; font-size: 0.8rem; color: #855b3b; font-weight: bold; }
+
+        #win-modal { transition: opacity 0.3s ease; }
+    </style>
+</head>
+<body class="p-2 md:p-4">
+
+    <div id="game-container">
+        <!-- Game Board -->
+        <div id="board-container" class="flex-shrink-0"></div>
+
+        <!-- Control Panel -->
+        <div class="flex-grow bg-white/60 backdrop-blur-sm p-4 rounded-xl shadow-lg border-2 border-amber-800/30">
+            <h1 class="text-3xl font-bold text-center text-amber-800 mb-4">본격! 윷놀이 게임</h1>
+            
+            <div class="grid grid-cols-2 gap-4 text-center mb-4">
+                <div id="red-score-box" class="p-3 bg-red-500 rounded-lg text-white shadow-md border-4 border-transparent">
+                    <h2 class="text-xl font-bold">빨강 팀</h2>
+                    <p class="text-4xl font-bold" id="red-score">0</p>
+                </div>
+                <div id="blue-score-box" class="p-3 bg-blue-500 rounded-lg text-white shadow-md border-4 border-transparent">
+                    <h2 class="text-xl font-bold">파랑 팀</h2>
+                    <p class="text-4xl font-bold" id="blue-score">0</p>
+                </div>
+            </div>
+
+             <div id="turn-indicator" class="text-center text-xl font-bold mb-4 p-2 rounded-md transition-colors duration-300">현재 턴: </div>
+
+            <div id="yut-thrower" class="relative flex justify-center items-center h-32 mb-4 bg-amber-100 rounded-lg shadow-inner"></div>
+            
+            <div id="result-display" class="h-16 text-center">
+                <p id="result-text" class="text-2xl font-bold text-amber-700"></p>
+                <p id="result-description" class="text-sm text-gray-600"></p>
+            </div>
+            
+            <button id="throw-button" class="w-full bg-amber-700 text-white text-xl font-bold py-3 px-6 rounded-lg shadow-lg hover:bg-amber-800 transition">윷 던지기</button>
+
+            <div class="mt-4 grid grid-cols-2 gap-4">
+                <div>
+                    <h3 class="font-bold text-center mb-2">빨강 팀 대기실</h3>
+                    <div id="red-waiting-area" class="min-h-[50px] bg-red-100 p-2 rounded flex justify-center items-center gap-2"></div>
+                </div>
+                <div>
+                    <h3 class="font-bold text-center mb-2">파랑 팀 대기실</h3>
+                    <div id="blue-waiting-area" class="min-h-[50px] bg-blue-100 p-2 rounded flex justify-center items-center gap-2"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="win-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center opacity-0 pointer-events-none">
+        <div class="bg-white p-8 rounded-xl shadow-2xl text-center transform scale-95 transition-transform duration-300">
+            <h2 id="win-message" class="text-4xl font-bold mb-4"></h2>
+            <p class="text-lg mb-6">축하합니다!</p>
+            <button id="restart-button" class="bg-amber-700 text-white text-xl font-bold py-3 px-8 rounded-lg shadow-lg hover:bg-amber-800 transition">새 게임 시작</button>
+        </div>
+    </div>
+
+    <script>
+        // Game elements
+        const boardContainer = document.getElementById('board-container');
+        const throwButton = document.getElementById('throw-button');
+        const yutThrower = document.getElementById('yut-thrower');
+        const resultText = document.getElementById('result-text');
+        const resultDescription = document.getElementById('result-description');
+        const turnIndicator = document.getElementById('turn-indicator');
+        const redWaitingArea = document.getElementById('red-waiting-area');
+        const blueWaitingArea = document.getElementById('blue-waiting-area');
+        const redScoreEl = document.getElementById('red-score');
+        const blueScoreEl = document.getElementById('blue-score');
+        const redScoreBox = document.getElementById('red-score-box');
+        const blueScoreBox = document.getElementById('blue-score-box');
+        const winModal = document.getElementById('win-modal');
+        const winMessage = document.getElementById('win-message');
+        const restartButton = document.getElementById('restart-button');
+
+        let gameState = {};
+        const YUT_RESULTS = { "-1": "빽도", 1: "도", 2: "개", 3: "걸", 4: "윷", 5: "모" };
+        
+        // --- START OF BOARD LAYOUT AND PATHS REVISION ---
+        const SPOTS_LAYOUT = [
+            // Outer Ring (20 spots)
+            [0, 90, 90, true, false], [1, 90, 74, false, false], [2, 90, 58, false, false], [3, 90, 42, false, false], [4, 90, 26, false, false],
+            [5, 90, 10, true, false], [6, 74, 10, false, false], [7, 58, 10, false, false], [8, 42, 10, false, false], [9, 26, 10, false, false],
+            [10, 10, 10, true, false],[11, 10, 26, false, false], [12, 10, 42, false, false], [13, 10, 58, false, false], [14, 10, 74, false, false],
+            [15, 10, 90, true, false],[16, 26, 90, false, false], [17, 42, 90, false, false], [18, 58, 90, false, false], [19, 74, 90, false, false],
+            // Center
+            [21, 50, 50, false, true], 
+            // Diagonal spots (8 total, 2 per branch)
+            [22, 77, 23, false, false], [23, 64, 36, false, false], // Branch: 5 -> 21
+            [24, 36, 64, false, false], [25, 23, 77, false, false], // Branch: 21 -> 15
+            [26, 23, 23, false, false], [27, 36, 36, false, false], // Branch: 10 -> 21
+            [28, 64, 64, false, false], [29, 77, 77, false, false]  // Branch: 21 -> 0
+        ];
+
+        const PATHS = {
+            main:                 [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+            shortcut_tr:          [5, 22, 23, 21], // Path to center
+            shortcut_tl:          [10, 26, 27, 21], // Path to center
+            path_center_to_bl:    [21, 24, 25, 15], // Path from center
+            path_center_to_goal:  [21, 28, 29, 0] // Path from center
+        };
+
+        function getNextPosition(piece, moves) {
+            if (piece.pos === 1 && piece.path === 'main' && moves === -1) {
+                return { pos: 'finished', path: null };
+            }
+
+            if (piece.pos === -1) {
+                if (moves === -1) return { pos: -1, path: 'main' };
+                const targetIndex = moves;
+                if (targetIndex >= PATHS.main.length) return { pos: 'finished', path: null };
+                // When starting, land directly on the spot
+                if (moves === 5) return {pos: 5, path: 'main'};
+                return { pos: PATHS.main[targetIndex], path: 'main' };
+            }
+
+            let currentPathName = piece.path;
+            
+            if (piece.pos === 21) {
+                currentPathName = 'path_center_to_goal';
+            } else if (piece.pos === 5 && currentPathName === 'main') {
+                currentPathName = 'shortcut_tr';
+            } else if (piece.pos === 10 && currentPathName === 'main') {
+                currentPathName = 'shortcut_tl';
+            } else if (currentPathName === 'shortcut_tr' && piece.pos === 21) {
+                currentPathName = 'path_center_to_bl';
+            }
+
+            let currentPath = PATHS[currentPathName];
+            let currentIndex = currentPath.indexOf(piece.pos);
+
+            if (moves === -1) {
+                if (piece.pos === 0) return { pos: 19, path: 'main' };
+                if (currentIndex > 0) return { pos: currentPath[currentIndex - 1], path: currentPathName };
+                return { pos: piece.pos, path: piece.path };
+            }
+
+            const nextIndex = currentIndex + moves;
+
+            // Check for finishing
+            if (currentPathName === 'path_center_to_goal' && nextIndex >= currentPath.length) {
+                return { pos: 'finished', path: null };
+            } else if (currentPathName === 'main' && nextIndex >= currentPath.length) {
+                return {pos: 'finished', path: null};
+            }
+            
+            if (nextIndex >= currentPath.length) {
+                let lastSpot = currentPath[currentPath.length - 1];
+                // Transition from shortcut to next path
+                if (lastSpot === 15) { // from shortcut_tr
+                    currentPathName = 'main';
+                    currentPath = PATHS.main;
+                    currentIndex = currentPath.indexOf(15);
+                    const remainingMoves = nextIndex - (PATHS.shortcut_tr.length - 1);
+                    const finalIndex = currentIndex + remainingMoves;
+                    if(finalIndex >= currentPath.length) return { pos: 'finished', path: null};
+                    return { pos: currentPath[finalIndex], path: currentPathName };
+                }
+                 return { pos: 'finished', path: null };
+            }
+            
+            return { pos: currentPath[nextIndex], path: currentPathName };
+        }
+        // --- END OF BOARD LAYOUT AND PATHS REVISION ---
+
+        function initializeGame() {
+            gameState = { pieces: [], currentPlayer: 'red', turnState: 'throwing', throwResults: [], scores: { red: 0, blue: 0 } };
+            for (let i = 0; i < 4; i++) {
+                gameState.pieces.push({ id: `r${i}`, team: 'red', pos: -1, piggybacked: [], path: 'main' });
+                gameState.pieces.push({ id: `b${i}`, team: 'blue', pos: -1, piggybacked: [], path: 'main' });
+            }
+            renderBoard();
+            renderAllPieces();
+            updateUI();
+        }
+
+        function renderBoard() {
+            boardContainer.innerHTML = '';
+            SPOTS_LAYOUT.forEach(([id, x, y, isCorner, isCenter]) => {
+                const spot = document.createElement('div');
+                spot.className = 'spot';
+                spot.dataset.spotId = id;
+                if (isCorner) spot.classList.add('corner');
+                if (isCenter) spot.classList.add('center');
+                spot.style.left = `${x}%`;
+                spot.style.top = `${y}%`;
+                boardContainer.appendChild(spot);
+            });
+        }
+        
+        function renderAllPieces() {
+            document.querySelectorAll('.piece').forEach(p => p.remove());
+            gameState.pieces.forEach(p => {
+                const isPiggybackedByAnother = gameState.pieces.some(parent => parent.piggybacked.includes(p.id));
+                if(p.pos === 'finished' || isPiggybackedByAnother) return;
+                const pieceEl = document.createElement('div');
+                pieceEl.id = p.id;
+                pieceEl.className = `piece ${p.team}`;
+                pieceEl.dataset.pieceId = p.id;
+                const piggybackCount = p.piggybacked.length;
+                if(piggybackCount > 0) pieceEl.textContent = piggybackCount + 1;
+                if(p.pos === -1) { 
+                    const area = p.team === 'red' ? redWaitingArea : blueWaitingArea;
+                    area.appendChild(pieceEl);
+                } else {
+                    const spot = boardContainer.querySelector(`[data-spot-id='${p.pos}']`);
+                    if(spot) spot.appendChild(pieceEl);
+                }
+            });
+            if (gameState.turnState === 'moving') highlightSelectablePieces();
+        }
+
+        function updateUI() {
+            redScoreEl.textContent = gameState.scores.red;
+            blueScoreEl.textContent = gameState.scores.blue;
+            const isRedTurn = gameState.currentPlayer === 'red';
+            turnIndicator.textContent = `현재 턴: ${isRedTurn ? '빨강' : '파랑'} 팀`;
+            turnIndicator.style.backgroundColor = isRedTurn ? '#fecaca' : '#bfdbfe';
+            turnIndicator.style.color = isRedTurn ? '#b91c1c' : '#1d4ed8';
+            redScoreBox.style.borderColor = isRedTurn ? '#fef08a' : 'transparent';
+            blueScoreBox.style.borderColor = !isRedTurn ? '#fef08a' : 'transparent';
+            throwButton.disabled = gameState.turnState !== 'throwing';
+            throwButton.textContent = gameState.turnState === 'throwing' ? '윷 던지기' : '말 움직이는 중...';
+             if (gameState.turnState === 'throwing') {
+                resultText.textContent = "윷을 던져주세요.";
+                resultDescription.textContent = "";
+            } else {
+                resultText.textContent = `결과: ${gameState.throwResults.map(r => YUT_RESULTS[r]).join(', ')}`;
+                resultDescription.textContent = "움직일 말을 선택하세요.";
+            }
+        }
+        
+        function handleThrow() {
+            throwButton.disabled = true;
+            yutThrower.innerHTML = '';
+            let bellyCount = 0;
+            const isBackDoStickBelly = Math.random() < 0.5;
+            for (let i = 0; i < 4; i++) {
+                const isBelly = (i === 0) ? isBackDoStickBelly : Math.random() > 0.5;
+                if (isBelly) bellyCount++;
+            }
+            let result = bellyCount;
+            if(bellyCount === 1 && isBackDoStickBelly) { result = -1; }
+            if(bellyCount === 0) result = 4; // 윷 (Yut)
+            if(bellyCount === 4) result = 5; // 모 (Mo)
+
+            animateYutThrow(result, () => {
+                gameState.throwResults.push(result);
+                gameState.turnState = 'moving';
+                updateUI();
+                renderAllPieces();
+            });
+        }
+        
+        function animateYutThrow(result, callback) {
+            yutThrower.innerHTML = '';
+            let bellyCount = result === 5 ? 4 : (result === 4 ? 0 : (result === -1 ? 1 : result));
+            let isBackDo = result === -1;
+            for (let i = 0; i < 4; i++) {
+                let isBelly = false;
+                if (isBackDo) { isBelly = i === 0; } 
+                else if (result === 5) { isBelly = true; } // Mo is 4 bellies
+                else if (result === 4) { isBelly = false; } // Yut is 0 bellies
+                else if (bellyCount > i) { isBelly = true; }
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'yut-wrapper';
+                const stick = document.createElement('div');
+                stick.className = 'yut-stick';
+                const back = document.createElement('div');
+                back.className = 'yut-face back';
+                const belly = document.createElement('div');
+                belly.className = 'yut-face belly';
+                if(i===0) belly.innerHTML = '<span>X</span>';
+                stick.append(back, belly);
+                wrapper.appendChild(stick);
+                yutThrower.appendChild(wrapper);
+                wrapper.style.transform = `translateY(-100px) rotateZ(${Math.random() * 360}deg)`;
+                stick.style.transform = `rotateY(${Math.random() * 360}deg) rotateX(${Math.random() * 360}deg)`;
+                setTimeout(() => {
+                    const finalX = (i - 1.5) * 30 + (Math.random() - 0.5) * 10;
+                    wrapper.style.transform = `translateX(${finalX}px) rotateZ(${(Math.random() - 0.5) * 20}deg)`;
+                    const yRotation = (isBelly ? 180 : 0) + 360 * 2;
+                    stick.style.transform = `rotateY(${yRotation}deg)`;
+                }, 50);
+            }
+            setTimeout(callback, 1200);
+        }
+
+        function highlightSelectablePieces() {
+            document.querySelectorAll('.piece.selectable').forEach(p => p.classList.remove('selectable'));
+            const pieces = document.querySelectorAll(`.piece.${gameState.currentPlayer}`);
+            pieces.forEach(p => {
+                const isPiggybackedByAnother = gameState.pieces.some(parent => parent.piggybacked.includes(p.dataset.pieceId));
+                if (!isPiggybackedByAnother) p.classList.add('selectable');
+            });
+        }
+        
+        function handlePieceClick(e) {
+            const pieceEl = e.target.closest('.piece');
+            if (!pieceEl || gameState.turnState !== 'moving') return;
+            const pieceId = pieceEl.dataset.pieceId;
+            const piece = gameState.pieces.find(p => p.id === pieceId);
+            if (!piece || piece.team !== gameState.currentPlayer || !pieceEl.classList.contains('selectable')) return;
+            movePiece(pieceId, gameState.throwResults.shift());
+        }
+
+        function movePiece(pieceId, moves) {
+            const piece = gameState.pieces.find(p => p.id === pieceId);
+            if (!piece) return;
+            const allMovingPiecesIds = [piece.id, ...piece.piggybacked];
+            const { pos: newPos, path: newPath } = getNextPosition(piece, moves);
+            const oldBase = gameState.pieces.find(p => p.piggybacked.includes(pieceId));
+            if(oldBase) {
+                oldBase.piggybacked = oldBase.piggybacked.filter(id => !allMovingPiecesIds.includes(id));
+            }
+            let captured = false;
+            if (newPos === 'finished') {
+                allMovingPiecesIds.forEach(id => {
+                    const p = gameState.pieces.find(p => p.id === id);
+                    if(p) { p.pos = 'finished'; gameState.scores[p.team]++; }
+                });
+            } else {
+                const opponentPiecesOnSpot = gameState.pieces.filter(p => p.pos === newPos && p.team !== piece.team);
+                if(opponentPiecesOnSpot.length > 0) {
+                    opponentPiecesOnSpot.forEach(op => {
+                       const allOpponentPieces = [op, ...op.piggybacked.map(id => gameState.pieces.find(p => p.id === id))];
+                       allOpponentPieces.forEach(p => {
+                           if(p) { p.pos = -1; p.path = 'main'; p.piggybacked = []; }
+                       });
+                    });
+                    captured = true;
+                }
+                const friendlyPiecesOnSpot = gameState.pieces.filter(p => p.pos === newPos && p.team === piece.team && !allMovingPiecesIds.includes(p.id));
+                const movingBasePiece = gameState.pieces.find(p => p.id === pieceId);
+                const movingPiggybackedPieces = movingBasePiece.piggybacked;
+
+                if(friendlyPiecesOnSpot.length > 0) {
+                    const newBasePiece = friendlyPiecesOnSpot[0];
+                    newBasePiece.piggybacked.push(...allMovingPiecesIds);
+                    allMovingPiecesIds.forEach(id => {
+                        const p = gameState.pieces.find(p => p.id === id);
+                        if (p) { p.pos = newPos; p.path = newPath; p.piggybacked = []; }
+                    });
+                } else {
+                    movingBasePiece.pos = newPos;
+                    movingBasePiece.path = newPath;
+                    movingBasePiece.piggybacked = []; 
+                    movingPiggybackedPieces.forEach(id => {
+                        const p = gameState.pieces.find(p => p.id === id);
+                        if(p) { p.pos = newPos; p.path = newPath; }
+                    });
+                    movingBasePiece.piggybacked = movingPiggybackedPieces;
+                }
+            }
+            if (captured || moves === 4 || moves === 5) {
+                gameState.turnState = 'throwing';
+            }
+            renderAllPieces();
+            checkEndTurn();
+        }
+        
+        function checkEndTurn() {
+            if (gameState.scores.red >= 4 || gameState.scores.blue >= 4) {
+                endGame();
+                return;
+            }
+            if (gameState.throwResults.length === 0 && gameState.turnState === 'moving') {
+                gameState.currentPlayer = gameState.currentPlayer === 'red' ? 'blue' : 'red';
+                gameState.turnState = 'throwing';
+            }
+            updateUI();
+            if (gameState.turnState === 'moving') highlightSelectablePieces();
+        }
+
+        function endGame() {
+            const winner = gameState.scores.red >= 4 ? '빨강' : '파랑';
+            winMessage.textContent = `${winner} 팀 승리!`;
+            winModal.classList.remove('opacity-0', 'pointer-events-none');
+            winModal.querySelector('div').classList.remove('scale-95');
+        }
+
+        throwButton.addEventListener('click', handleThrow);
+        document.addEventListener('click', handlePieceClick);
+        restartButton.addEventListener('click', () => {
+            winModal.classList.add('opacity-0', 'pointer-events-none');
+            winModal.querySelector('div').classList.add('scale-95');
+            initializeGame();
+        });
+
+        initializeGame();
+    </script>
+</body>
+</html>
+
