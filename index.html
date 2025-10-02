@@ -201,41 +201,41 @@
         };
 
         function getNextPosition(piece, moves) {
+            // Case 1: '빽도'로 첫번째 칸에서 골인하는 경우
             if (piece.pos === 1 && piece.path === 'main' && moves === -1) {
                 return { pos: 'finished', path: null };
             }
 
+            // Case 2: 대기실에서 처음 출발하는 경우
             if (piece.pos === -1) {
-                if (moves === -1) return { pos: -1, path: 'main' };
-                let targetIndex = moves - 1; 
-                if (moves === 5) targetIndex = 4; // 모
-                 if (moves === 4) targetIndex = 3; // 윷
-                 if (moves === 3) targetIndex = 2; // 걸
-                 if (moves === 2) targetIndex = 1; // 개
-                 if (moves === 1) targetIndex = 0; // 도
-                 
-                // When starting, land directly on the spot
-                if(moves === 5) return { pos: PATHS.main[4], path: 'main'}; // 모는 5번째 칸
-                return { pos: PATHS.main[targetIndex+1], path: 'main' };
+                if (moves === -1) return { pos: -1, path: 'main' }; // 빽도는 움직일 수 없음
+                // BUG FIX: '도'는 1번 칸, '모'는 5번 칸으로 정확히 이동
+                const targetIndex = moves;
+                if (targetIndex >= PATHS.main.length) return { pos: 'finished', path: null };
+                return { pos: PATHS.main[targetIndex], path: 'main' };
             }
             
+            // Case 3: 말판 위에서 일반적인 이동
             let currentPathName = piece.path;
             
-            if (piece.pos === 21) {
-                 if (currentPathName === 'shortcut_tr' || currentPathName === 'shortcut_tl') {
-                    currentPathName = 'path_center_to_bl';
-                } else {
-                    currentPathName = 'path_center_to_goal';
-                }
-            } else if (piece.pos === 5 && currentPathName === 'main') {
+            // 교차점에서 경로를 전환하는 로직
+            if (piece.pos === 5 && currentPathName === 'main') {
                 currentPathName = 'shortcut_tr';
             } else if (piece.pos === 10 && currentPathName === 'main') {
                 currentPathName = 'shortcut_tl';
+            } else if (piece.pos === 21) {
+                // BUG FIX: 중앙에서 나갈 때, 들어온 경로에 따라 정확한 출구로 이동
+                if (piece.path === 'shortcut_tr') { // 우측 상단에서 왔다면
+                    currentPathName = 'path_center_to_bl'; // 좌측 하단으로
+                } else if (piece.path === 'shortcut_tl') { // 좌측 상단에서 왔다면
+                    currentPathName = 'path_center_to_goal'; // 골인 지점으로
+                }
             }
 
             let currentPath = PATHS[currentPathName];
             let currentIndex = currentPath.indexOf(piece.pos);
 
+            // '빽도' 처리
             if (moves === -1) {
                 if (piece.pos === 0) return { pos: 19, path: 'main' };
                 if (currentIndex > 0) return { pos: currentPath[currentIndex - 1], path: currentPathName };
@@ -244,27 +244,29 @@
 
             let nextIndex = currentIndex + moves;
 
+            // 현재 경로의 끝을 넘어가는 경우
             if (nextIndex >= currentPath.length) {
                 const remainingMoves = nextIndex - (currentPath.length - 1);
                 const lastSpot = currentPath[currentPath.length - 1];
 
+                let nextPathName = null;
+                // 경로 전환 로직
                 if (lastSpot === 21) {
-                     currentPathName = 'path_center_to_bl';
+                    if (currentPathName === 'shortcut_tr') nextPathName = 'path_center_to_bl';
+                    else if (currentPathName === 'shortcut_tl') nextPathName = 'path_center_to_goal';
                 } else if (lastSpot === 15) {
-                    currentPathName = 'main';
-                } else if(lastSpot === 0 || lastSpot === 19){
-                     return { pos: 'finished', path: null };
-                } else {
-                     return { pos: 'finished', path: null };
+                    nextPathName = 'main';
                 }
-                
-                currentPath = PATHS[currentPathName];
-                currentIndex = currentPath.indexOf(lastSpot);
-                nextIndex = currentIndex + remainingMoves;
-                
-                 if(nextIndex >= currentPath.length) return { pos: 'finished', path: null};
-                 return { pos: currentPath[nextIndex], path: currentPathName };
 
+                if (nextPathName) {
+                    const nextPath = PATHS[nextPathName];
+                    const transitionIndex = nextPath.indexOf(lastSpot);
+                    const finalIndex = transitionIndex + remainingMoves;
+                    if (finalIndex >= nextPath.length) return { pos: 'finished', path: null };
+                    return { pos: nextPath[finalIndex], path: nextPathName };
+                } else {
+                    return { pos: 'finished', path: null }; // 골인
+                }
             } else {
                  return { pos: currentPath[nextIndex], path: currentPathName };
             }
@@ -396,10 +398,26 @@
 
         function highlightSelectablePieces() {
             document.querySelectorAll('.piece.selectable').forEach(p => p.classList.remove('selectable'));
+            const currentMove = gameState.throwResults[0];
             const pieces = document.querySelectorAll(`.piece.${gameState.currentPlayer}`);
-            pieces.forEach(p => {
-                const isPiggybackedByAnother = gameState.pieces.some(parent => parent.piggybacked.includes(p.dataset.pieceId));
-                if (!isPiggybackedByAnother) p.classList.add('selectable');
+
+            pieces.forEach(pEl => {
+                const pieceId = pEl.dataset.pieceId;
+                const piece = gameState.pieces.find(p => p.id === pieceId);
+                const isPiggybackedByAnother = gameState.pieces.some(parent => parent.piggybacked.includes(pieceId));
+                
+                if (isPiggybackedByAnother) return;
+
+                // BUG FIX: '빽도'가 나왔을 때, 턴을 넘기기 위해 대기실 말을 포함한 모든 말을 선택 가능하게 함
+                if (currentMove === -1) {
+                    pEl.classList.add('selectable');
+                    return;
+                }
+                
+                // '빽도'가 아닐 경우, 대기실에 있는 말은 움직일 수 있음
+                if (piece.pos === -1 || currentMove > 0) {
+                     pEl.classList.add('selectable');
+                }
             });
         }
         
@@ -409,18 +427,32 @@
             const pieceId = pieceEl.dataset.pieceId;
             const piece = gameState.pieces.find(p => p.id === pieceId);
             if (!piece || piece.team !== gameState.currentPlayer || !pieceEl.classList.contains('selectable')) return;
-            movePiece(pieceId, gameState.throwResults.shift());
+
+            const move = gameState.throwResults.shift();
+            
+            // BUG FIX: 대기실에서 '빽도'를 선택하면 그냥 턴만 넘김
+            if (piece.pos === -1 && move === -1) {
+                processNextStep(move, false);
+                return;
+            }
+
+            const { captured } = movePiece(pieceId, move);
+            processNextStep(move, captured);
         }
 
         function movePiece(pieceId, moves) {
             const piece = gameState.pieces.find(p => p.id === pieceId);
-            if (!piece) return;
+            if (!piece) return { captured: false };
+
             const allMovingPiecesIds = [piece.id, ...piece.piggybacked];
             const { pos: newPos, path: newPath } = getNextPosition(piece, moves);
+            
+            // 기존에 업혀있던 그룹에서 분리
             const oldBase = gameState.pieces.find(p => p.piggybacked.includes(pieceId));
             if(oldBase) {
                 oldBase.piggybacked = oldBase.piggybacked.filter(id => !allMovingPiecesIds.includes(id));
             }
+            
             let captured = false;
             if (newPos === 'finished') {
                 allMovingPiecesIds.forEach(id => {
@@ -428,6 +460,7 @@
                     if(p) { p.pos = 'finished'; gameState.scores[p.team]++; }
                 });
             } else {
+                // 상대 말 잡기
                 const opponentPiecesOnSpot = gameState.pieces.filter(p => p.pos === newPos && p.team !== piece.team);
                 if(opponentPiecesOnSpot.length > 0) {
                     opponentPiecesOnSpot.forEach(op => {
@@ -438,61 +471,60 @@
                     });
                     captured = true;
                 }
+                
+                // 우리 말 업기
                 const friendlyPiecesOnSpot = gameState.pieces.filter(p => p.pos === newPos && p.team === piece.team && !allMovingPiecesIds.includes(p.id));
                 const movingBasePiece = gameState.pieces.find(p => p.id === pieceId);
-                const movingPiggybackedPieces = movingBasePiece.piggybacked;
-
-                if(friendlyPiecesOnSpot.length > 0) {
+                
+                if(friendlyPiecesOnSpot.length > 0) { // 다른 그룹과 합치기
                     const newBasePiece = friendlyPiecesOnSpot[0];
                     newBasePiece.piggybacked.push(...allMovingPiecesIds);
                     allMovingPiecesIds.forEach(id => {
                         const p = gameState.pieces.find(p => p.id === id);
                         if (p) { p.pos = newPos; p.path = newPath; p.piggybacked = []; }
                     });
-                } else {
-                    movingBasePiece.pos = newPos;
-                    movingBasePiece.path = newPath;
-                    movingBasePiece.piggybacked = []; 
-                    movingPiggybackedPieces.forEach(id => {
+                } else { // 단독 그룹으로 이동
+                    allMovingPiecesIds.forEach(id => {
                         const p = gameState.pieces.find(p => p.id === id);
                         if(p) { p.pos = newPos; p.path = newPath; }
                     });
-                    movingBasePiece.piggybacked = movingPiggybackedPieces;
                 }
-            }
-            if (captured) {
-                gameState.throwResults.push(0); // Dummy value to get another throw
-            }
-            if (moves !== 4 && moves !== 5) {
-                // If it wasn't a capture, and not Yut or Mo, end the turn if no throws left
-                 if (gameState.throwResults.length === 0) {
-                     gameState.currentPlayer = gameState.currentPlayer === 'red' ? 'blue' : 'red';
-                     gameState.turnState = 'throwing';
-                 }
-            } else {
-                // It was Yut or Mo, so player gets another throw
-                gameState.turnState = 'throwing';
             }
             
             renderAllPieces();
-            checkEndTurn();
+            return { captured };
         }
         
-        function checkEndTurn() {
+        // REFACTORED: 턴 관리 로직을 하나로 통합한 새 함수
+        function processNextStep(lastMove, wasCapture) {
+            // 1단계: 승리 조건 확인
             if (gameState.scores.red >= 4 || gameState.scores.blue >= 4) {
                 endGame();
                 return;
             }
-            if (gameState.throwResults.length > 0 && gameState.turnState !== 'throwing') {
-                 // Still has moves left, stay in moving state
-            } else if (gameState.throwResults.length === 0 && gameState.turnState === 'moving') {
-                gameState.currentPlayer = gameState.currentPlayer === 'red' ? 'blue' : 'red';
-                gameState.turnState = 'throwing';
-            }
-            updateUI();
-            if (gameState.turnState === 'moving') highlightSelectablePieces();
-        }
 
+            // 2단계: 남은 이동 횟수가 있는지 확인 (윷, 모 이후 또 던졌을 경우)
+            if (gameState.throwResults.length > 0) {
+                gameState.turnState = 'moving';
+                updateUI();
+                highlightSelectablePieces();
+                return;
+            }
+
+            // 3단계: 추가 턴(잡았거나 윷/모)을 얻었는지 확인
+            const isYutOrMo = lastMove === 4 || lastMove === 5;
+            if (wasCapture || isYutOrMo) {
+                gameState.turnState = 'throwing'; // 같은 플레이어가 다시 던짐
+                updateUI();
+                return;
+            }
+
+            // 4단계: 턴을 상대에게 넘김
+            gameState.currentPlayer = gameState.currentPlayer === 'red' ? 'blue' : 'red';
+            gameState.turnState = 'throwing';
+            updateUI();
+        }
+        
         function endGame() {
             const winner = gameState.scores.red >= 4 ? '빨강' : '파랑';
             winMessage.textContent = `${winner} 팀 승리!`;
@@ -512,4 +544,5 @@
     </script>
 </body>
 </html>
+
 
