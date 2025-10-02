@@ -207,23 +207,30 @@
 
             if (piece.pos === -1) {
                 if (moves === -1) return { pos: -1, path: 'main' };
-                const targetIndex = moves;
-                if (targetIndex >= PATHS.main.length) return { pos: 'finished', path: null };
+                let targetIndex = moves - 1; 
+                if (moves === 5) targetIndex = 4; // 모
+                 if (moves === 4) targetIndex = 3; // 윷
+                 if (moves === 3) targetIndex = 2; // 걸
+                 if (moves === 2) targetIndex = 1; // 개
+                 if (moves === 1) targetIndex = 0; // 도
+                 
                 // When starting, land directly on the spot
-                if (moves === 5) return {pos: 5, path: 'main'};
-                return { pos: PATHS.main[targetIndex], path: 'main' };
+                if(moves === 5) return { pos: PATHS.main[4], path: 'main'}; // 모는 5번째 칸
+                return { pos: PATHS.main[targetIndex+1], path: 'main' };
             }
-
+            
             let currentPathName = piece.path;
             
             if (piece.pos === 21) {
-                currentPathName = 'path_center_to_goal';
+                 if (currentPathName === 'shortcut_tr' || currentPathName === 'shortcut_tl') {
+                    currentPathName = 'path_center_to_bl';
+                } else {
+                    currentPathName = 'path_center_to_goal';
+                }
             } else if (piece.pos === 5 && currentPathName === 'main') {
                 currentPathName = 'shortcut_tr';
             } else if (piece.pos === 10 && currentPathName === 'main') {
                 currentPathName = 'shortcut_tl';
-            } else if (currentPathName === 'shortcut_tr' && piece.pos === 21) {
-                currentPathName = 'path_center_to_bl';
             }
 
             let currentPath = PATHS[currentPathName];
@@ -235,34 +242,34 @@
                 return { pos: piece.pos, path: piece.path };
             }
 
-            const nextIndex = currentIndex + moves;
+            let nextIndex = currentIndex + moves;
 
-            // Check for finishing
-            if (currentPathName === 'path_center_to_goal' && nextIndex >= currentPath.length) {
-                return { pos: 'finished', path: null };
-            } else if (currentPathName === 'main' && nextIndex >= currentPath.length) {
-                return {pos: 'finished', path: null};
-            }
-            
             if (nextIndex >= currentPath.length) {
-                let lastSpot = currentPath[currentPath.length - 1];
-                // Transition from shortcut to next path
-                if (lastSpot === 15) { // from shortcut_tr
-                    currentPathName = 'main';
-                    currentPath = PATHS.main;
-                    currentIndex = currentPath.indexOf(15);
-                    const remainingMoves = nextIndex - (PATHS.shortcut_tr.length - 1);
-                    const finalIndex = currentIndex + remainingMoves;
-                    if(finalIndex >= currentPath.length) return { pos: 'finished', path: null};
-                    return { pos: currentPath[finalIndex], path: currentPathName };
-                }
-                 return { pos: 'finished', path: null };
-            }
-            
-            return { pos: currentPath[nextIndex], path: currentPathName };
-        }
-        // --- END OF BOARD LAYOUT AND PATHS REVISION ---
+                const remainingMoves = nextIndex - (currentPath.length - 1);
+                const lastSpot = currentPath[currentPath.length - 1];
 
+                if (lastSpot === 21) {
+                     currentPathName = 'path_center_to_bl';
+                } else if (lastSpot === 15) {
+                    currentPathName = 'main';
+                } else if(lastSpot === 0 || lastSpot === 19){
+                     return { pos: 'finished', path: null };
+                } else {
+                     return { pos: 'finished', path: null };
+                }
+                
+                currentPath = PATHS[currentPathName];
+                currentIndex = currentPath.indexOf(lastSpot);
+                nextIndex = currentIndex + remainingMoves;
+                
+                 if(nextIndex >= currentPath.length) return { pos: 'finished', path: null};
+                 return { pos: currentPath[nextIndex], path: currentPathName };
+
+            } else {
+                 return { pos: currentPath[nextIndex], path: currentPathName };
+            }
+        }
+        
         function initializeGame() {
             gameState = { pieces: [], currentPlayer: 'red', turnState: 'throwing', throwResults: [], scores: { red: 0, blue: 0 } };
             for (let i = 0; i < 4; i++) {
@@ -453,9 +460,20 @@
                     movingBasePiece.piggybacked = movingPiggybackedPieces;
                 }
             }
-            if (captured || moves === 4 || moves === 5) {
+            if (captured) {
+                gameState.throwResults.push(0); // Dummy value to get another throw
+            }
+            if (moves !== 4 && moves !== 5) {
+                // If it wasn't a capture, and not Yut or Mo, end the turn if no throws left
+                 if (gameState.throwResults.length === 0) {
+                     gameState.currentPlayer = gameState.currentPlayer === 'red' ? 'blue' : 'red';
+                     gameState.turnState = 'throwing';
+                 }
+            } else {
+                // It was Yut or Mo, so player gets another throw
                 gameState.turnState = 'throwing';
             }
+            
             renderAllPieces();
             checkEndTurn();
         }
@@ -465,7 +483,9 @@
                 endGame();
                 return;
             }
-            if (gameState.throwResults.length === 0 && gameState.turnState === 'moving') {
+            if (gameState.throwResults.length > 0 && gameState.turnState !== 'throwing') {
+                 // Still has moves left, stay in moving state
+            } else if (gameState.throwResults.length === 0 && gameState.turnState === 'moving') {
                 gameState.currentPlayer = gameState.currentPlayer === 'red' ? 'blue' : 'red';
                 gameState.turnState = 'throwing';
             }
